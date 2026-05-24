@@ -19,8 +19,8 @@ A lightweight, native macOS RSS Reader application built with Swift. Stay up-to-
 
 ## Requirements
 
-- macOS 10.15+ (Catalina or later)
-- Xcode 12.0+ (for building from source)
+- macOS 14.0+ (Sonoma or later)
+- Xcode 15.0+ (for building from source)
 
 ## Installation
 
