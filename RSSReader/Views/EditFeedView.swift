@@ -65,7 +65,7 @@ struct EditFeedView: View {
     private func saveFeed() {
         let trimmedURL = feedURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedName = feedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard feedURL.isValidURL() else {
+        guard trimmedURL.isValidURL() else {
             errorMessage = "Please enter a valid URL"
             return
         }

@@ -16,11 +16,6 @@ struct MainContentView: View {
         .onAppear {
            viewModel.refreshCurrentFilter()
         }
-        .onChange(of: viewModel.showingAddFeed) {
-            if viewModel.showingAddFeed {
-                viewModel.refreshCurrentFilter()
-            }
-        }
     }
 
     private var contentHeader: some View {

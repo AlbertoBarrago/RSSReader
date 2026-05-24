@@ -8,132 +8,79 @@ RSS Reader is a native macOS application built with Swift that provides RSS feed
 
 ## Build & Run Commands
 
-### Building
 ```bash
-# Build the project
+# Build
 xcodebuild build -scheme RSSReader -project RSSReader.xcodeproj
+
+# Run tests (uses Swift Testing framework, not XCTest)
+xcodebuild test -scheme RSSReader -project RSSReader.xcodeproj -destination 'platform=macOS'
+
+# Run a single test by name
+xcodebuild test -scheme RSSReader -project RSSReader.xcodeproj -destination 'platform=macOS' -only-testing:RSSReaderTests/RSSReaderTests/exampleTestName
 
 # Open in Xcode
 open RSSReader.xcodeproj
-```
 
-### Running
-```bash
-# From Xcode: Cmd + R
-# From command line:
+# Launch the built app
 find ~/Library/Developer/Xcode/DerivedData -name "RSSReader.app" | head -n 1 | xargs open
 ```
 
-### Testing
-```bash
-# Run tests
-xcodebuild test -scheme RSSReader -project RSSReader.xcodeproj -destination 'platform=macOS'
-```
+**Test framework**: Tests use `import Testing` with `@Test` macro (Swift Testing), not XCTest.
 
 ## CI/CD Pipeline
 
-The repository uses GitHub Actions for automated building, testing, and releases:
-
 ### PR Validation (`.github/workflows/pr-check.yml`)
-**Triggers**: Pull requests to `main` or `develop`
-- Builds the project in Debug mode
-- Runs all tests
-- Posts build status as PR comment
-- Blocks merge if build or tests fail
+Triggers on PRs to `main` or `develop` — builds Debug, runs tests, posts status as PR comment.
 
 ### Automatic Release (`.github/workflows/release.yml`)
-**Triggers**: Push to `main` branch
-- Automatically increments patch version (e.g., v1.2.3 → v1.2.4)
-- Updates Xcode project version
-- Builds release version (unsigned)
-- Creates DMG installer
-- Generates changelog from commits since last tag
-- Creates git tag
-- Publishes GitHub Release with DMG attached
-- Uploads DMG as artifact
+Triggers on push to `main` — auto-increments patch version, builds release (unsigned), creates DMG, publishes GitHub Release.
 
-**Version Bumping**: Uses semantic versioning (MAJOR.MINOR.PATCH). On each merge to main, the PATCH version auto-increments. To manually bump MAJOR or MINOR versions, manually create and push a tag before merging (e.g., `git tag v2.0.0 && git push --tags`).
+**Version Bumping**: PATCH auto-increments on every merge to `main`. To bump MAJOR/MINOR, push a tag manually before merging (`git tag v2.0.0 && git push --tags`).
 
 ### Development Workflow
 1. Create feature branch from `develop`
-2. Make changes and push
-3. Open PR to `develop` or `main`
-4. CI validates build and tests automatically
-5. Merge PR to `main` to trigger automatic release
-6. GitHub automatically creates new version and publishes release
+2. Open PR to `develop` or `main`
+3. CI validates automatically; merge to `main` triggers release
 
 ## Architecture
 
 ### Dual UI System
-The app operates in two modes simultaneously:
-1. **Menu Bar Mode** (via `MenubarController`): Popover interface accessed from the status bar
-2. **Desktop Mode** (via `RSSReaderApp`): Traditional window interface
+The app runs two interfaces simultaneously:
+1. **Menu Bar** (`MenubarController` in `RSSReaderApp.swift`): Popover from the status bar icon
+2. **Desktop Window** (`RSSReaderApp`): Standard `Window` scene
 
-Both modes share the same SwiftData `ModelContainer` and `ModelContext` for data consistency, but they are initialized separately in their respective components.
+Each creates its own `ModelContainer`/`ModelContext` over the same SwiftData store. Changes persist through the shared on-disk store, but there is no real-time cross-context sync.
 
-### Data Models (SwiftData)
-Located in `RSSReader/Models/RSSmodel.swift`:
+> Note: `MenubarController` declares `static let shared` but `AppDelegate` always creates a new instance via `MenubarController()` — the singleton is unused.
 
-- **RSSFeedItem**: Individual RSS articles with title, link, pubDate, read status, and optional preview images
-- **RSSFeedSource**: Feed sources with name, URL, and lastUpdated timestamp
-- **DeletedArticle**: Archive of deleted article links to prevent re-adding previously deleted items
-- **FilterOption**: Enum for filtering articles (all/unread/read/feed-specific)
+### Data Models (`RSSReader/Models/RSSmodel.swift`)
+- **`RSSFeedItem`**: Article — title, link, pubDate (String), isRead, feedSourceURL/Name, `previewImageURL`. `itemDescription` uses `@Attribute(.externalStorage)` to store HTML blobs outside the main store file.
+- **`RSSFeedSource`**: Feed subscription — name, URL, lastUpdated.
+- **`DeletedArticle`**: Tombstone for deleted articles. `link` has `@Attribute(.unique)` — SwiftData enforces uniqueness at the store level.
+- **`FilterOption`**: Enum (all/unread/read/feed) used for sidebar selection.
 
-### State Management Pattern
-The app uses a centralized `ContentViewModel` (MVVM pattern) that:
-- Owns the `ModelContext` reference
-- Manages all CRUD operations for feeds and articles
-- Handles filtering logic based on read status and feed selection
-- Coordinates with `RSSParser` for feed fetching
-- Implements "archive and delete" pattern: deleted items are recorded in `DeletedArticle` to prevent re-appearance
+### State Management
+`ContentViewModel` (MVVM, `@MainActor`) owns the `ModelContext` and centralises all CRUD, filtering, and refresh coordination. Views get it via `@StateObject`/`@ObservedObject`. Filtering is computed (`filteredFeedItems`) from in-memory arrays fetched by `fetchData()`.
 
-### RSS Parsing Architecture
-`RSSParser` (`Services/RSSParser.swift`) handles:
-- Asynchronous feed fetching with URLSession
-- XML parsing with `XMLParserDelegate` pattern
-- Support for both RSS and Atom formats
-- Image extraction from multiple sources (enclosures, media:content, media:thumbnail, HTML in descriptions)
-- Duplicate prevention using both existing items and deleted articles archive
-- User notifications for new articles
+### RSS Parsing (`Services/RSSParser.swift`)
+Uses **callback-based concurrency** (`DispatchQueue` + completion handlers), not async/await — keep this pattern when extending it. Two-class design: `RSSParser` manages fetch tasks; `RSSParserDelegate` (NSXMLParserDelegate) accumulates parsed items, deduplicates against existing items and `DeletedArticle` tombstones, then batch-inserts in `parserDidEndDocument`.
 
-### View Hierarchy
-- **ContentView**: Root view with NavigationSplitView layout
-- **SidebarView**: Left sidebar showing filters (All/Unread/Read) and feed list
-- **MainContentView**: Main content area displaying article list
-- **ArticleRow** / **RichArticleRow**: Two article display styles (configurable via `ArticleListStyle` enum)
-- Modal sheets: AddFeedView, EditFeedView, ManageFeedsView
+Duplicate prevention runs in `parserDidEndDocument` against two sources:
+1. Existing `RSSFeedItem` links
+2. `DeletedArticle` links (prevents re-appearing deleted articles)
+
+### String Extensions
+String utilities are split across two files — both extend `String`:
+- `String+Extensions.swift`: `strippingHTML()`
+- `Data+Extensions.swift` (misleading name): `toDate()`, `formatAsRSSDate()`, `isValidURL()`, `extractDomain()`, `extractDomainName()`
 
 ### Menu Bar Integration
-`MenubarController` in `RSSReaderApp.swift`:
-- Creates `NSStatusItem` with system icon
-- Handles left-click (toggle popover) and right-click (show menu)
-- Implements auto-refresh timer with configurable polling intervals (5/10/15/30 minutes)
-- Uses `@AppStorage` for persistent settings (keepOpen, pollingInterval, showInMenuBar)
-- Controls app activation policy (.regular vs .accessory) to toggle dock visibility
-
-## Key Implementation Details
-
-### Preventing Duplicate Articles
-When parsing feeds, the system checks against:
-1. Existing `RSSFeedItem` entries (by link)
-2. `DeletedArticle` archive (by link)
-
-This ensures that manually deleted articles won't reappear on subsequent refreshes.
-
-### Shared ModelContext Pattern
-Both `MenubarController` and `RSSReaderApp` create separate `ModelContainer` instances with the same schema. Changes made in one interface are visible in the other through SwiftData's persistence layer, though real-time synchronization between the two contexts is not explicitly implemented.
-
-### Date Handling
-RSS dates are stored as strings (`pubDate` field) with cleanup logic to remove timezone suffixes. Extensions in `String+Extensions.swift` provide date parsing utilities.
-
-### Image Loading
-The parser attempts to find preview images from multiple sources in order:
-1. RSS enclosure elements (type="image/*")
-2. Media namespace tags (media:content, media:thumbnail)
-3. iTunes namespace (itunes:image)
-4. Regex extraction from HTML in description/content fields
+`MenubarController` uses `@AppStorage` for three persistent settings:
+- `keepOpen` (Bool) — makes popover `.semitransient` instead of `.transient`
+- `pollingInterval` (TimeInterval, default 300s) — controls the auto-refresh timer
+- `showInMenuBar` (Bool) — switches app activation policy between `.regular` (dock visible) and `.accessory`
 
 ### Application Lifecycle
-- The app doesn't terminate when the last window is closed (`applicationShouldTerminateAfterLastWindowClosed` returns `false`)
-- Desktop window can be hidden via menu bar setting, switching between `.regular` and `.accessory` activation policies
+- `applicationShouldTerminateAfterLastWindowClosed` returns `false` — the app keeps running when the window is closed
+- The desktop window hides itself on close (`windowShouldClose` calls `orderOut`) instead of terminating
 - Default feed (joshwcomeau) is added on first launch if no feeds exist
