@@ -106,9 +106,8 @@ class MenubarController: NSObject, ObservableObject {
         }
         
         super.init()
-        
+
         setupMenubar()
-        startTimer()
     }
     
     private func setupMenubar() {

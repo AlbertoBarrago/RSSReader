@@ -6,13 +6,10 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct ManageFeedsView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @Query private var feedSources: [RSSFeedSource]
-    @StateObject private var parser = RSSParser()
+    @ObservedObject var viewModel: ContentViewModel
 
     var body: some View {
         VStack(spacing: 20) {
@@ -20,13 +17,13 @@ struct ManageFeedsView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            if feedSources.isEmpty {
+            if viewModel.feedSources.isEmpty {
                 Text("No feeds added yet")
                     .foregroundColor(.secondary)
                     .padding()
             } else {
                 List {
-                    ForEach(feedSources, id: \.id) { feedSource in
+                    ForEach(viewModel.feedSources, id: \.id) { feedSource in
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(feedSource.name)
@@ -49,8 +46,7 @@ struct ManageFeedsView: View {
                             Spacer()
 
                             Button("Delete") {
-                                modelContext.delete(feedSource)
-                                try? modelContext.save()
+                                viewModel.deleteFeed(feedSource)
                             }
                             .buttonStyle(.bordered)
                             .foregroundColor(.red)
@@ -62,9 +58,9 @@ struct ManageFeedsView: View {
 
             HStack {
                 Button("Refresh All") {
-                    parser.refreshAllFeeds(sources: feedSources, in: modelContext) {}
+                    viewModel.refreshAllFeeds()
                 }
-                .disabled(parser.isLoading)
+                .disabled(viewModel.isLoading)
 
                 Spacer()
 

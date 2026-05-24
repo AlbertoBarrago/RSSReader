@@ -30,7 +30,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $viewModel.showingManageFeeds) {
-            ManageFeedsView()
+            ManageFeedsView(viewModel: viewModel)
         }
         .sheet(item: $viewModel.feedToEdit) { feed in
             EditFeedView(feed: feed) { updatedFeed in
