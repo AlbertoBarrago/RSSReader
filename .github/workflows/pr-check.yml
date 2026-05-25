@@ -35,6 +35,7 @@ jobs:
             -project RSSReader.xcodeproj \
             -scheme "RSSReader" \
             -destination 'platform=macOS' \
+            -only-testing:RSSReaderTests \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
