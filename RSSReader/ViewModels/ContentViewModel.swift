@@ -22,7 +22,7 @@ class ContentViewModel: ObservableObject {
         fetchData()
     }
 
-    private func fetchData() {
+    func fetchData() {
         do {
             let feedSourcesDescriptor = FetchDescriptor<RSSFeedSource>(sortBy: [SortDescriptor(\RSSFeedSource.name)])
             let allFeedItemsDescriptor = FetchDescriptor<RSSFeedItem>(sortBy: [SortDescriptor(\RSSFeedItem.pubDate, order: .reverse)])
